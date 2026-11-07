@@ -32,6 +32,8 @@ public class GUIStorageChest extends GUIBase
     private GuiButton downB;
     private GuiTextField searchField;
     private boolean skip;
+    /** search text the current page was last positioned for */
+    private String lastSearch = "";
 
     public GUIStorageChest(IInventory playerInv, TEStorageChest te)
     {
@@ -77,6 +79,7 @@ public class GUIStorageChest extends GUIBase
         searchField.setVisible(true);
         searchField.setFocused(te.searchActive);
         skip = false;
+        lastSearch = te.search;
     }
 
     public void onKeyboardEvent(GuiScreenEvent.KeyboardInputEvent event)
@@ -98,6 +101,13 @@ public class GUIStorageChest extends GUIBase
                     { // Inventory key
                         event.setCanceled(true);
                         skip = false;
+                    }
+                    else if (keyCode == 28 && !searchField.getText().isEmpty())
+                    {
+                        // patch: Enter jumps to the next line containing a match
+                        jumpToMatch(te.currentLine + 1);
+                        event.setCanceled(true);
+                        skip = true;
                     }
                     else if (keyCode == 28 || keyCode == 1)
                     {
@@ -153,6 +163,12 @@ public class GUIStorageChest extends GUIBase
         searchField.drawTextBox();
         te.search = searchField.getText();
         te.searchActive = searchField.isFocused();
+        if (!te.search.equals(lastSearch))
+        {
+            lastSearch = te.search;
+            // patch: jump to the first match unless one is already on the visible page
+            if (!te.search.isEmpty() && !hasMatchOnPage()) jumpToMatch(0);
+        }
 
         for (Slot s : inventorySlots.inventorySlots)
         {
@@ -203,7 +219,7 @@ public class GUIStorageChest extends GUIBase
         upB.enabled = te.currentLine > 0;
         downB.enabled = te.currentLine < te.additionalLines;
 
-        if (isPointInRegion(205, 6, 10, 108, mouseX, mouseY))
+        if (isPointInRegion(0, 14, 216, 112, mouseX, mouseY))
         {
             int scroll = Mouse.getDWheel();
             if (scroll > 0) scrollPressed(true);
@@ -216,6 +232,50 @@ public class GUIStorageChest extends GUIBase
         else if (isPointInRegion(0, 14, width, 200, mouseX, mouseY))
         {
             if (Mouse.getEventButtonState()) searchField.setFocused(false);
+        }
+    }
+
+    /**
+     * Whether a slot on the currently shown page matches the search text.
+     *
+     * @return {@code true} if a visible slot holds a matching item
+     */
+    private boolean hasMatchOnPage()
+    {
+        int first = te.currentLine * 11;
+        int last = first + 6 * 11;
+        for (int i = first; i < last && i < te.inventory.getSlots(); i++)
+        {
+            ItemStack s = te.inventory.getStackInSlot(i);
+            if (!s.isEmpty() && stackMatches(te.search, s)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Scrolls to the first line at or after {@code fromLine} (wrapping) that contains a matching item.
+     *
+     * @param fromLine line to start searching at
+     */
+    private void jumpToMatch(int fromLine)
+    {
+        int lines = (te.inventory.getSlots() + 10) / 11;
+        if (lines <= 0) return;
+        for (int n = 0; n < lines; n++)
+        {
+            int line = (fromLine + n) % lines;
+            for (int x = 0; x < 11; x++)
+            {
+                int i = line * 11 + x;
+                if (i >= te.inventory.getSlots()) break;
+                ItemStack s = te.inventory.getStackInSlot(i);
+                if (!s.isEmpty() && stackMatches(te.search, s))
+                {
+                    int target = Math.min(line, te.additionalLines);
+                    if (target != te.currentLine) sendToServer(TEStorageChest.LINE_JUMP_BASE + target);
+                    return;
+                }
+            }
         }
     }
 

@@ -60,7 +60,8 @@ public abstract class TileEntityMultiBlockBase<TE extends TileEntityMultiBlockBa
                 TileEntity te = world.getTileEntity(currentPos);
                 if (te instanceof TileEntityMultiBlockBase
                         && ((TileEntityMultiBlockBase) te).isMaster()
-                        && instanceOf(te))
+                        && instanceOf(te)
+                        && ((TileEntityMultiBlockBase<?>) te).getListOfBlockPositions(currentPos).contains(this.pos))
                 {
                     setMaster((TE) te);
                     ((TE) te).setMaster();

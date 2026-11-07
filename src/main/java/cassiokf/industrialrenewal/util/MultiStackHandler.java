@@ -1,6 +1,7 @@
 package cassiokf.industrialrenewal.util;
 
 import cassiokf.industrialrenewal.util.interfaces.ISync;
+import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
@@ -29,9 +30,26 @@ public class MultiStackHandler extends ItemStackHandler
     public ItemStack getStackInSlot(int slot)
     {
         validateSlotIndex(slot);
-        ItemStack stack = this.stacks.get(slot);
-        stack.setCount(count);
-        return stack;
+        // patch: the internal stack is only the item "type" (count 1); return a copy with the real count.
+        // The old code mutated and returned the internal stack (and even ItemStack.EMPTY), so any caller
+        // modifying it, or a save while its size was 0, lost the item type -> whole rack content vanished.
+        ItemStack type = this.stacks.get(slot);
+        if (count <= 0 || type.isEmpty()) return ItemStack.EMPTY;
+        return ItemHandlerHelper.copyStackWithSize(type, count);
+    }
+
+    /**
+     * Clears the stored item type when the count dropped to zero (or below).
+     *
+     * @return nothing
+     */
+    private void clearIfEmpty()
+    {
+        if (count <= 0)
+        {
+            count = 0;
+            this.stacks.set(0, ItemStack.EMPTY);
+        }
     }
 
     public ItemStack insertItem(@Nonnull ItemStack stack)
@@ -111,7 +129,7 @@ public class MultiStackHandler extends ItemStackHandler
         if (existing.isEmpty())
             return ItemStack.EMPTY;
 
-        int toExtract = Math.min(amount, maxStack);
+        int toExtract = Math.min(amount, existing.getMaxStackSize());
 
         if (count <= toExtract)
         {
@@ -149,13 +167,29 @@ public class MultiStackHandler extends ItemStackHandler
     public void setCount(int value)
     {
         count = value;
+        clearIfEmpty();
         onContentsChanged(0);
     }
 
     public void removeFromCount(int value)
     {
         count -= value;
+        clearIfEmpty();
         onContentsChanged(0);
+    }
+
+    /**
+     * Removes everything from the handler.
+     *
+     * @return the removed contents as one stack with the full count (may exceed max stack size), or EMPTY
+     */
+    public ItemStack extractAll()
+    {
+        ItemStack all = getStackInSlot(0);
+        count = 0;
+        this.stacks.set(0, ItemStack.EMPTY);
+        onContentsChanged(0);
+        return all;
     }
 
     public void addToCount(int value)
@@ -201,5 +235,11 @@ public class MultiStackHandler extends ItemStackHandler
         sync = nbt.getBoolean("sync");
         count = nbt.getInteger("count");
         super.deserializeNBT(nbt);
+        // patch: old saves stored the internal stack with the real count truncated to a byte (e.g. 256 -> 0),
+        // which makes it "empty" although the item id is there. Keep the type (count 1) if items are stored.
+        ItemStack type = this.stacks.get(0);
+        if (type != ItemStack.EMPTY && type.getItem() != Items.AIR && count > 0)
+            type.setCount(1);
+        else if (count <= 0) this.stacks.set(0, ItemStack.EMPTY);
     }
 }

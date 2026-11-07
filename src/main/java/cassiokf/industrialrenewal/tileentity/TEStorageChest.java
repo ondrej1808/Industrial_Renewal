@@ -16,6 +16,9 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.items.CapabilityItemHandler;
 
+import net.minecraftforge.items.ItemHandlerHelper;
+
+import java.util.ArrayList;
 import java.util.List;
 
 public class TEStorageChest extends TEMultiTankBase<TEStorageChest>
@@ -46,9 +49,22 @@ public class TEStorageChest extends TEMultiTankBase<TEStorageChest>
         return MachinesUtils.getBlocksIn3x3x2Centered(centerPosition, getMasterFacing());
     }
 
+    /** button ids >= this jump directly to line (id - LINE_JUMP_BASE); used by search */
+    public static final int LINE_JUMP_BASE = 100;
+
+    /**
+     * Handles GUI navigation: 1 = line up, 2 = line down, >= {@link #LINE_JUMP_BASE} = jump to a line.
+     *
+     * @param id     button id
+     * @param player player to reopen the GUI for (null on client)
+     */
     public void guiButtonClick(int id, EntityPlayer player)
     {
-        if (id == 1 && currentLine > 0)
+        if (id >= LINE_JUMP_BASE)
+        {
+            currentLine = Math.max(0, Math.min(additionalLines, id - LINE_JUMP_BASE));
+        }
+        else if (id == 1 && currentLine > 0)
         {
             currentLine--;
         }
@@ -96,8 +112,49 @@ public class TEStorageChest extends TEMultiTankBase<TEStorageChest>
     @Override
     public void onMasterBreak()
     {
+        // contents are moved to the remaining stack parts / dropped by TEMultiTankBase; this only drops
+        // anything that is still left (normally nothing)
         super.onMasterBreak();
         Utils.dropInventoryItems(world, pos, inventory);
+    }
+
+    /**
+     * Empties this chest's own inventory.
+     *
+     * @return removed stacks
+     */
+    @Override
+    public List<ItemStack> extractAllContents()
+    {
+        List<ItemStack> out = new ArrayList<>();
+        for (int i = 0; i < inventory.getSlots(); i++)
+        {
+            ItemStack s = inventory.getStackInSlot(i);
+            if (!s.isEmpty())
+            {
+                out.add(s.copy());
+                inventory.setStackInSlot(i, ItemStack.EMPTY);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Inserts stacks into this chest's own inventory, stacking onto existing stacks first.
+     *
+     * @param stacks stacks to insert
+     * @return stacks (or remainders) that did not fit
+     */
+    @Override
+    public List<ItemStack> insertContents(List<ItemStack> stacks)
+    {
+        List<ItemStack> left = new ArrayList<>();
+        for (ItemStack s : stacks)
+        {
+            ItemStack rest = ItemHandlerHelper.insertItemStacked(inventory, s.copy(), false);
+            if (!rest.isEmpty()) left.add(rest);
+        }
+        return left;
     }
 
     private void spawnItems(ItemStack stack)

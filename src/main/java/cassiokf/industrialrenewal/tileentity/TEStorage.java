@@ -14,6 +14,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.items.CapabilityItemHandler;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class TEStorage extends TEMultiTankBase<TEStorage>
@@ -29,9 +30,10 @@ public class TEStorage extends TEMultiTankBase<TEStorage>
             if (!world.isRemote)
             {
                 ItemStack itemsIn = inventory.extractItem(inventory.getStackInSlot(0).getMaxStackSize());
-                if (!itemsIn.isEmpty())
+                if (!itemsIn.isEmpty() && !playerIn.addItemStackToInventory(itemsIn) && !itemsIn.isEmpty())
                 {
-                    playerIn.addItemStackToInventory(itemsIn);
+                    // patch: full player inventory used to void the extracted stack
+                    playerIn.dropItem(itemsIn, false);
                 }
             }
             return true;
@@ -69,8 +71,51 @@ public class TEStorage extends TEMultiTankBase<TEStorage>
     @Override
     public void onMasterBreak()
     {
+        // contents are moved to the remaining stack parts / dropped by TEMultiTankBase
         super.onMasterBreak();
-        if (isBottom() && inventory.getCount() > 0) spawnItems(inventory.getCount());
+        if (inventory.getCount() > 0) spawnItems(inventory.getCount());
+    }
+
+    /**
+     * Empties this rack's own storage.
+     *
+     * @return stored items split into max-size stacks
+     */
+    @Override
+    public List<ItemStack> extractAllContents()
+    {
+        List<ItemStack> out = new ArrayList<>();
+        ItemStack all = inventory.extractAll();
+        if (all.isEmpty()) return out;
+        int left = all.getCount();
+        int max = Math.max(1, all.getMaxStackSize());
+        while (left > 0)
+        {
+            int n = Math.min(left, max);
+            ItemStack part = all.copy();
+            part.setCount(n);
+            out.add(part);
+            left -= n;
+        }
+        return out;
+    }
+
+    /**
+     * Inserts stacks into this rack's own storage (single item type).
+     *
+     * @param stacks stacks to insert
+     * @return stacks (or remainders) that did not fit or are a different item
+     */
+    @Override
+    public List<ItemStack> insertContents(List<ItemStack> stacks)
+    {
+        List<ItemStack> left = new ArrayList<>();
+        for (ItemStack s : stacks)
+        {
+            ItemStack rest = inventory.insertItem(s.copy());
+            if (!rest.isEmpty()) left.add(rest);
+        }
+        return left;
     }
 
     private void spawnItems(int quantity)
