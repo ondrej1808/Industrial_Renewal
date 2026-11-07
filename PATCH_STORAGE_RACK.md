@@ -1,5 +1,8 @@
 # Storage Rack / Storage Chest – analysis and patch (IR 0.21.8, SuSy 0.2.0.1-patch2)
 
+> [!WARNING]
+> **UNOFFICIAL PATCH – USE AT YOUR OWN RISK.** Not made, endorsed or supported by the authors of Supersymmetry, GregTech CEu or Industrial Renewal. No warranty of any kind. Back up your world before using it.
+
 ## Model
 Every rack (3×3 footprint, 3 blocks tall) has a master TE. Racks stacked on top of each other (master exactly
 3 blocks higher) form a "stack". The shared contents are held **only by the bottom** member (`bottomTE`),
