@@ -28,6 +28,7 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
+import static net.minecraftforge.fml.common.eventhandler.EventPriority.HIGHEST;
 import static net.minecraftforge.fml.common.eventhandler.EventPriority.LOW;
 
 @Mod.EventBusSubscriber(modid = References.MODID)
@@ -71,6 +72,23 @@ public class EventHandler
         if (screen instanceof GUIStorageChest)
         {
             ((GUIStorageChest) screen).onKeyboardEvent(event);
+        }
+    }
+
+    /**
+     * Patch: gives the Storage Chest GUI the mouse wheel before any other mod (Mouse Tweaks would otherwise
+     * use it to move items between slots), and cancels the event when the chest scrolled.
+     *
+     * @param event Forge pre mouse-input event for the current screen
+     */
+    @SideOnly(Side.CLIENT)
+    @SubscribeEvent(priority = HIGHEST)
+    public static void onGuiMouseInput(GuiScreenEvent.MouseInputEvent.Pre event)
+    {
+        GuiScreen screen = event.getGui();
+        if (screen instanceof GUIStorageChest && ((GUIStorageChest) screen).onMouseWheel())
+        {
+            event.setCanceled(true);
         }
     }
 

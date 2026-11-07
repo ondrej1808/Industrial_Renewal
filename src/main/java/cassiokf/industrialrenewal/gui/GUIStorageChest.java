@@ -219,13 +219,7 @@ public class GUIStorageChest extends GUIBase
         upB.enabled = te.currentLine > 0;
         downB.enabled = te.currentLine < te.additionalLines;
 
-        if (isPointInRegion(0, 14, 216, 112, mouseX, mouseY))
-        {
-            int scroll = Mouse.getDWheel();
-            if (scroll > 0) scrollPressed(true);
-            else if (scroll < 0) scrollPressed(false);
-        }
-        else if (isPointInRegion(136, 4, 82, 11, mouseX, mouseY))
+        if (isPointInRegion(136, 4, 82, 11, mouseX, mouseY))
         {
             if (Mouse.getEventButtonState()) searchField.setFocused(true);
         }
@@ -277,6 +271,23 @@ public class GUIStorageChest extends GUIBase
                 }
             }
         }
+    }
+
+    /**
+     * Handles the current LWJGL mouse wheel event: scrolls one line when the cursor is over the chest
+     * slots or the scrollbar.
+     *
+     * @return {@code true} if the wheel was used (event must not reach other mods)
+     */
+    public boolean onMouseWheel()
+    {
+        int wheel = Mouse.getEventDWheel();
+        if (wheel == 0) return false;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        if (!isPointInRegion(0, 14, 218, 112, mouseX, mouseY)) return false;
+        scrollPressed(wheel > 0);
+        return true;
     }
 
     public void scrollPressed(boolean up)

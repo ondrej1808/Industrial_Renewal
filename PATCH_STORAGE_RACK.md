@@ -1,48 +1,61 @@
-# Storage Rack / Storage Chest – analýza a patch (IR 0.21.8, SuSy 0.2.0.1-patch2)
+# Storage Rack / Storage Chest – analysis and patch (IR 0.21.8, SuSy 0.2.0.1-patch2)
 
 ## Model
-Každý rack (3×3×2… výška 3 bloky) má master TE. Racky na sobě (master přesně o 3 bloky výš) tvoří „stack“.
-Sdílený obsah drží **jen spodní** člen (`bottomTE`), ten se zvětší na `n × kapacita`.
-Ostatní členové přes `getBottomTE()` posílají insert/extract/GUI/capability na spodní.
+Every rack (3×3 footprint, 3 blocks tall) has a master TE. Racks stacked on top of each other (master exactly
+3 blocks higher) form a "stack". The shared contents are held **only by the bottom** member (`bottomTE`),
+which is resized to `n × capacity`. All other members forward insert/extract/GUI/capabilities to the bottom
+via `getBottomTE()`.
 
-## Nalezené chyby (původní kód)
-| # | Kde | Chyba | Důsledek |
-|---|-----|-------|----------|
-| 1 | `TEMultiTankBase.passValueDown/checkSize` | Prostřední členové nedostanou nový `bottomTE`; nový spodní člen si nastaví `bottomTE` jen v jedné větvi | Po zničení spodního racku ve stacku ≥3 ukazují zbylé racky na **zničený TE** → vložené itemy (ruka, hopper, Crafting Station) **mizí** |
-| 2 | `checkSize` | Horní člen si nikdy nevynuluje `isBottom` | Rack pod/mezi existující: obsah starého spodního se „osiřel“ (neviditelný), TESR ukazuje 2 popisky |
-| 3 | `TEStorage.onMasterBreak` | Zničení spodního = vysype **celý** sdílený obsah na zem (za rack, offset 2) | Tisíce item entit, despawn po 5 min, často ve zdi |
-| 4 | `TEStorageChest.onMasterBreak` | Totéž pro chest (vysype všech 198+ slotů) | dtto |
-| 5 | rozdělení stacku | Spodní část se zmenší přes `setSize` → přebytek se vysype, horní část je prázdná | Ztráta / rozházení itemů |
-| 6 | klient | `onMasterBreak` jen na serveru → klientské `bottomTE` zůstanou na mrtvém TE | Rack vypadá prázdný, GUI se neotevře |
-| 7 | `MultiStackHandler.getStackInSlot` | Vrací a **mutuje interní stack** (i `ItemStack.EMPTY`) | Mod, který stack upraví, nebo uložení při počtu 0 → ztráta typu itemu → **celý obsah zmizí** po reloadu |
-| 8 | `MultiStackHandler` NBT | Počet se ukládá do bytu (`Count`) → 256 = 0 = „prázdný“ | Zdroj #7 |
-| 9 | `MultiStackHandler.extractItem` | Vydá až `maxStack` (4096×n) najednou, ne max 64 | Mod/hopper může přijmout jen část → zbytek voidnut |
-| 10 | `TEStorage.onActivated` (shift-klik) | Při plném inventáři hráče se vytažený stack zahodí do voidu | Ztráta 64 itemů |
-| 11 | `ContainerStorageChest` | Sloty postavené pro starou velikost; při přidání/odebrání racku s otevřeným GUI | Crash / zápis do špatných slotů |
-| 12 | `TileEntityMultiBlockBase.getMaster` | Hledá master v 3×3×3 bez kontroly, že ho footprint obsahuje | Rozbití racku může rozbít **sousední** rack (do hloubky) |
-| 13 | `Block*.onBlockActivated` | Horní strana zakázaná | Nejde otevřít shora |
+## Bugs found (original code)
+| # | Where | Bug | Consequence |
+|---|-------|-----|-------------|
+| 1 | `TEMultiTankBase.passValueDown/checkSize` | Intermediate members never get a new `bottomTE`; the new bottom only sets its `bottomTE` in one branch | After breaking the bottom rack of a stack of 3 or more, the remaining racks point to the **destroyed TE**. Items inserted by hand, hopper or Crafting Station **vanish** |
+| 2 | `checkSize` | The top member never clears `isBottom` | Rack placed below or between existing racks: the old bottom's contents become orphaned (invisible), the TESR shows two labels |
+| 3 | `TEStorage.onMasterBreak` | Breaking the bottom dumps the **whole** shared content on the ground (behind the rack, offset 2) | Thousands of item entities, despawn after 5 minutes, often inside walls |
+| 4 | `TEStorageChest.onMasterBreak` | Same for the chest (dumps all 198+ slots) | Same |
+| 5 | Stack split | The lower part shrinks via `setSize` and dumps the overflow; the upper part is empty | Items lost or scattered |
+| 6 | Client | `onMasterBreak` runs only on the server, so client `bottomTE` keeps pointing to the dead TE | Rack looks empty, GUI does not open |
+| 7 | `MultiStackHandler.getStackInSlot` | Returns and **mutates the internal stack** (even `ItemStack.EMPTY`) | A mod modifying the stack, or saving while the count is 0, loses the item type: **the whole content vanishes** after reload |
+| 8 | `MultiStackHandler` NBT | The count is saved into a byte (`Count`), so 256 becomes 0 = "empty" | Source of #7 |
+| 9 | `MultiStackHandler.extractItem` | Hands out up to `maxStack` (4096×n) at once instead of max 64 | A mod or hopper may accept only part, the rest is voided |
+| 10 | `TEStorage.onActivated` (shift-click) | With a full player inventory the extracted stack is voided | Loss of 64 items |
+| 11 | `ContainerStorageChest` | Slots built for the old size; adding/removing a rack while the GUI is open | Crash or writes to wrong slots |
+| 12 | `TileEntityMultiBlockBase.getMaster` | Searches a 3×3×3 area for a master without checking that its footprint contains the block | Breaking a rack can break a **neighbouring** rack (depth-wise) |
+| 13 | `Block*.onBlockActivated` | Top face disabled | Cannot be opened from the top |
+| 14 | `GUIStorageChest` | Mouse wheel read during rendering, only over the narrow scrollbar | Mouse Tweaks takes the wheel and moves items instead of scrolling |
+| 15 | `GUIStorageChest` search | Only paints non-matching slots red on the current page | On an empty page the search shows nothing |
 
-Ostatní postřehy (neopraveno): `search`/`currentLine` chestu jsou sdílené pro všechny hráče; racky s různou orientací se na sebe spojí (jen podle masteru).
+Other notes (not fixed): the chest's `search` and `currentLine` are shared by all players; racks with different
+orientations are linked into one stack (only the master position is checked).
 
 ## Patch
-- `TEMultiTankBase`: celý stack se vždy přepočítá najednou (`relinkStack`) – správné `bottomTE/topTE/isBottom/isTop` pro všechny členy; obsah nespodních členů se přesune do spodního (opravuje i staré světy s osiřelými itemy při načtení).
-- Zničení: obsah se nejdřív vyjme, stack se rozdělí, obsah se vrátí do spodní části, pak horní, zbytek se vysype na místě zničeného racku.
-- Klient: po každém sync paketu přepočet stacku (`relinkPending`).
-- `MultiStackHandler`: interní stack = jen typ (count 1), `getStackInSlot` vrací kopii; oprava starých NBT; extract max 64; vyčištění při 0.
-- Shift-klik s plným inventářem → drop místo voidu.
-- Chest GUI se zavře, když se stack změní/zničí.
-- `getMaster` kontroluje footprint.
-- Horní strana: otevře/vloží; položí se jen stejný rack (stavění stacku).
+- `TEMultiTankBase`: the whole stack is always resolved at once (`relinkStack`), giving every member correct
+  `bottomTE/topTE/isBottom/isTop`. Contents of non-bottom members are moved into the bottom (this also recovers
+  orphaned items in old worlds when they load).
+- Breaking: the contents are taken out first, the stack is split, the contents go back into the lower part,
+  then the upper part, and only the rest is dropped at the broken rack.
+- Client: the stack is re-resolved after every sync packet (`relinkPending`).
+- `MultiStackHandler`: the internal stack is only the item type (count 1) and `getStackInSlot` returns a copy.
+  Legacy NBT is repaired, extract gives max 64, the type is cleared at 0.
+- Shift-click with a full inventory drops the stack instead of voiding it.
+- The chest GUI closes when the stack changes or is broken.
+- `getMaster` checks the footprint.
+- Top face: opens/inserts; only the same rack is placed on top (to build the stack).
+- Chest GUI: the mouse wheel is handled in the earliest mouse-input event (before Mouse Tweaks) over the slots
+  and the scrollbar. The search jumps to the first matching line; Enter jumps to the next match.
 
-Dotčeno i `TEFluidTank` a `TEIndustrialBatteryBank` (stejný základ) – jen oprava odkazů, přenos tekutin/energie neimplementován.
+`TEFluidTank` and `TEIndustrialBatteryBank` share the same base class and get the pointer fixes too.
+Transferring fluids/energy between stack parts is not implemented.
 
-## Testovací scénáře
-1. Rack s itemy + rack nahoru → počet zůstane, kapacita ×2, popisek jen dole.
-2. Stack 3 → zničit spodní → itemy v nové spodní části, nic na zemi (pokud se vejde).
-3. Stack 3 → zničit prostřední → spodní drží co se vejde, zbytek nahoře, zbytek na zemi.
-4. Stack 3 → zničit horní → přebytek nad kapacitu na zemi.
-5. Po kroku 2 vkládat do racků (ruka, hopper, Crafting Station) → nic nemizí.
-6. Uložit + reload → obsah sedí.
-7. Chest: otevřené GUI a jiný hráč přidá/zničí rack → GUI se zavře, bez crashe.
-8. Shift-klik prázdnou rukou s plným inventářem → stack padne na zem.
-9. Shora klik prázdnou rukou / itemem → otevře / vloží; s rackem v ruce → postaví.
+## Test scenarios
+1. Rack with items + another rack on top: the count stays, the capacity doubles, only the bottom shows a label.
+2. Stack of 3, break the bottom one: the items are in the new bottom part, nothing on the ground (if it fits).
+3. Stack of 3, break the middle one: the bottom part keeps what fits, the rest goes to the top part, the rest to the ground.
+4. Stack of 3, break the top one: the overflow above capacity is dropped.
+5. After step 2, insert into the racks (hand, hopper, Crafting Station): nothing disappears.
+6. Save and reload: the contents match.
+7. Chest: GUI open while another player adds or breaks a rack: the GUI closes, no crash.
+8. Shift + right-click with an empty hand and a full inventory: the stack drops on the ground.
+9. Top face: empty hand or item opens/inserts, a rack in hand builds the stack.
+10. Chest GUI: the mouse wheel over the slots/scrollbar scrolls, Mouse Tweaks does not move items.
+11. Chest search on an empty page jumps to the matching line, Enter jumps to the next match.
