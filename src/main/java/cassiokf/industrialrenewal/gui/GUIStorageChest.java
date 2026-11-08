@@ -21,10 +21,16 @@ import net.minecraft.item.ItemStack;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
+import yalter.mousetweaks.api.MouseTweaksDisableWheelTweak;
 
 import java.util.ArrayList;
 import java.util.Locale;
 
+/**
+ * Storage Chest GUI. Patch: Mouse Tweaks' wheel tweak is disabled here, so the wheel scrolls the chest pages
+ * instead of moving items between the chest and the player inventory.
+ */
+@MouseTweaksDisableWheelTweak
 public class GUIStorageChest extends GUIBase
 {
     private final TEStorageChest te;

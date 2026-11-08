@@ -77,3 +77,8 @@ processResources {
         exclude 'mcmod.info'
     }
 }
+
+// patch: Mouse Tweaks API annotation is only a compile-time stub; the real class comes from the Mouse Tweaks mod
+jar {
+    exclude 'yalter/**'
+}
